@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="te">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Chandu Task Manager</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Telugu",sans-serif;background:#f4f6f8;color:#202124}
+header{background:#1f4e78;color:#fff;padding:16px;text-align:center;position:sticky;top:0;z-index:5}header h1{margin:0;font-size:23px}header small{opacity:.9}
+.wrap{max-width:1050px;margin:16px auto;padding:0 12px}.card{background:#fff;border-radius:14px;padding:17px;margin-bottom:14px;box-shadow:0 2px 10px #0001}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:11px}.full{grid-column:1/-1}label{font-size:13px;font-weight:bold}
+input,textarea{width:100%;padding:11px;margin-top:5px;border:1px solid #d5d9dd;border-radius:8px;font-size:14px}textarea{min-height:70px}
+button{border:0;border-radius:8px;padding:10px 14px;font-weight:bold;cursor:pointer}.primary{background:#1f4e78;color:#fff}.secondary{background:#e9eef3}.danger{background:#fce8e6;color:#b3261e}
+.topbar{display:flex;gap:8px;justify-content:flex-end;margin-bottom:10px}.hidden{display:none!important}.msg{padding:10px;border-radius:8px;background:#eef3f7;margin:8px 0;font-size:14px}.error{background:#fce8e6;color:#8b1e16}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.stat{text-align:center;padding:12px;background:#eef3f7;border-radius:10px}.stat b{display:block;font-size:24px}
+.filters{display:flex;gap:7px;flex-wrap:wrap;margin:10px 0}.filters .active{background:#1f4e78;color:#fff}
+.task{border:1px solid #e0e3e6;border-radius:11px;padding:13px;margin:10px 0}.task.done{opacity:.68;background:#f5faf6}.tasktop{display:flex;justify-content:space-between;gap:8px}.badge{font-size:12px;padding:4px 8px;border-radius:20px;background:#fdecea;color:#b3261e;white-space:nowrap}.done .badge{background:#e6f4ea;color:#137333}
+.meta{font-size:13px;color:#5f6368;margin:6px 0}.actions{display:flex;gap:7px;flex-wrap:wrap}.empty{text-align:center;color:#777;padding:20px}
+@media(max-width:650px){.grid{grid-template-columns:1fr}.full{grid-column:auto}.stats{grid-template-columns:repeat(3,1fr)}.stat{font-size:12px}.stat b{font-size:20px}}
+</style>
+</head>
+<body>
+<header><h1>📋 Chandu Task Manager</h1><small>Customer Complaints & Daily Tasks</small></header>
+<div class="wrap">
+<div id="setup" class="card">
+<h2>⚙️ మొదటి సారి Setup</h2>
+<p>Supabase Project URL మరియు Publishable Keyని ఇక్కడ ఒక్కసారి నమోదు చేయి. ఇవి ఈ browserలో మాత్రమే సేవ్ అవుతాయి.</p>
+<div class="grid">
+<div class="full"><label>Project URL</label><input id="cfgUrl" placeholder="https://xxxxxxxx.supabase.co"></div>
+<div class="full"><label>Publishable Key</label><input id="cfgKey" placeholder="sb_publishable_..."></div>
+</div><br><button class="primary" onclick="saveConfig()">💾 Save & Connect</button><div id="setupMsg"></div>
+</div>
+
+<div id="login" class="card hidden">
+<h2>🔐 Login</h2>
+<div class="grid">
+<div class="full"><label>Email</label><input id="email" type="email" placeholder="your@email.com"></div>
+<div class="full"><label>Password</label><input id="password" type="password" placeholder="Password"></div>
+</div><br><button class="primary" onclick="login()">Login</button> <button class="secondary" onclick="resetPassword()">Forgot Password</button>
+<div id="loginMsg"></div>
+</div>
+
+<div id="app">
+<div class="topbar"><span id="who" class="msg"></span><button class="secondary" onclick="logout()">Logout</button></div>
+<div class="card">
+<h2>➕ కొత్త Task / Complaint</h2>
+<div class="grid">
+<div><label>Customer Name *</label><input id="name" placeholder="ఉదా: Ravi"></div>
+<div><label>Mobile Number</label><input id="phone" inputmode="numeric" placeholder="9876543210"></div>
+<div class="full"><label>Complaint / Task *</label><textarea id="task" placeholder="ఏ పని చేయాలి?"></textarea></div>
+<div><label>Reminder Date</label><input id="date" type="date"></div>
+<div><label>Reminder Time</label><input id="time" type="time"></div>
+<div class="full"><label>Notes</label><input id="notes" placeholder="అదనపు సమాచారం (optional)"></div>
+</div><br><button class="primary" onclick="addTask()">💾 Save Task</button><div id="taskMsg"></div>
+</div>
+<div class="card"><h2>📊 Overview</h2><div class="stats">
+<div class="stat">🔴 Pending<b id="pendingCount">0</b></div><div class="stat">🟢 Completed<b id="doneCount">0</b></div><div class="stat">📋 Total<b id="totalCount">0</b></div>
+</div></div>
+<div class="card"><h2>📋 Task List</h2>
+<div class="filters"><button class="secondary active" onclick="setFilter('all',this)">All</button><button class="secondary" onclick="setFilter('pending',this)">🔴 Pending</button><button class="secondary" onclick="setFilter('done',this)">🟢 Completed</button></div>
+<input id="search" placeholder="🔍 Customer / Task / Phone search..." oninput="render()"><div id="list"></div>
+</div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+let sb=null,tasks=[],filter='all',editingId=null;
+const $=id=>document.getElementById(id);
+function msg(id,text,error=false){$(id).innerHTML=text?'<div class="msg '+(error?'error':'')+'">'+text+'</div>':''}
+function config(){return{url:localStorage.getItem('ctm_url'),key:localStorage.getItem('ctm_key')}}
+async function boot(){const c=config();if(!c.url||!c.key){$('setup').classList.remove('hidden');return}try{sb=window.supabase.createClient(c.url,c.key);const r=await sb.auth.getSession();if(r.error)throw r.error;msg('setupMsg','Connection successful ✅');if(r.data.session)showApp(r.data.session);else $('login').classList.remove('hidden')}catch(e){msg('setupMsg','Connection failed ❌: '+(e.message||e)+'<br><small>Project URL మరియు Publishable Key సరిగ్గా ఉన్నాయో చూడి.</small>',true);$('setup').classList.remove('hidden')}}
+async function saveConfig(){const url=$('cfgUrl').value.trim().replace(/\/$/,''),key=$('cfgKey').value.trim();if(!url||!key){msg('setupMsg','URL మరియు Publishable Key రెండూ ఇవ్వాలి.',true);return}if(!/^https:\/\/[^\s]+\.supabase\.co$/.test(url)){msg('setupMsg','Project URL ఇలా ఉండాలి: https://xxxxx.supabase.co',true);return}localStorage.setItem('ctm_url',url);localStorage.setItem('ctm_key',key);try{sb=window.supabase.createClient(url,key);const r=await sb.auth.getSession();if(r.error)throw r.error;msg('setupMsg','Connection successful ✅');$('login').classList.remove('hidden')}catch(e){msg('setupMsg','Connection failed ❌: '+(e.message||e),true)}}
+async function login(){const email=$('email').value.trim(),password=$('password').value;if(!email||!password){msg('loginMsg','Email మరియు Password ఇవ్వాలి.',true);return}const r=await sb.auth.signInWithPassword({email,password});if(r.error)msg('loginMsg',r.error.message,true);else showApp(r.data.session)}
+async function resetPassword(){const email=$('email').value.trim();if(!email){msg('loginMsg','ముందుగా Email ఇవ్వాలి.',true);return}const r=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.href});msg('loginMsg',r.error?r.error.message:'Password reset email పంపబడింది. Inbox చూడి.',!!r.error)}
+async function logout(){await sb.auth.signOut();location.reload()}
+function showApp(session){$('setup').classList.add('hidden');$('login').classList.add('hidden');$('app').style.display='block';$('who').textContent=session.user.email;loadTasks()}
+async function loadTasks(){const r=await sb.from('tasks').select('*').order('created_at',{ascending:false});if(r.error){msg('taskMsg','Tasks load కాలేదు: '+r.error.message,true);return}tasks=r.data||[];render()}
+async function addTask(){const name=$('name').value.trim(),task=$('task').value.trim();if(!name||!task){msg('taskMsg','Customer Name మరియు Task తప్పనిసరి.',true);return}const u=(await sb.auth.getUser()).data.user;const row={customer_name:name,phone:$('phone').value.trim(),task:task,reminder_date:$('date').value||null,reminder_time:$('time').value||null,notes:$('notes').value.trim(),status:'pending',user_id:u.id};let r=editingId?await sb.from('tasks').update(row).eq('id',editingId):await sb.from('tasks').insert(row);if(r.error){msg('taskMsg',r.error.message,true);return}editingId=null;['name','phone','task','date','time','notes'].forEach(x=>$(x).value='');msg('taskMsg','Task saved ✅');loadTasks()}
+async function toggle(id){const t=tasks.find(x=>x.id===id);const r=await sb.from('tasks').update({status:t.status==='completed'?'pending':'completed'}).eq('id',id);if(r.error)alert(r.error.message);else loadTasks()}
+async function del(id){if(!confirm('ఈ task delete చేయాలా?'))return;const r=await sb.from('tasks').delete().eq('id',id);if(r.error)alert(r.error.message);else loadTasks()}
+function edit(id){const t=tasks.find(x=>x.id===id);$('name').value=t.customer_name||'';$('phone').value=t.phone||'';$('task').value=t.task||'';$('date').value=t.reminder_date||'';$('time').value=t.reminder_time||'';$('notes').value=t.notes||'';editingId=id;scrollTo({top:0,behavior:'smooth'})}
+function setFilter(f,el){filter=f;document.querySelectorAll('.filters button').forEach(b=>b.classList.remove('active'));el.classList.add('active');render()}
+function formatDate(d){if(!d)return'No reminder';const p=d.split('-');return p[2]+'-'+p[1]+'-'+p[0]}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]))}
+function render(){const q=$('search').value.toLowerCase(),arr=tasks.filter(t=>(filter==='all'||(filter==='done'?t.status==='completed':t.status!=='completed'))&&(t.customer_name+' '+t.task+' '+(t.phone||'')).toLowerCase().includes(q));$('pendingCount').textContent=tasks.filter(t=>t.status!=='completed').length;$('doneCount').textContent=tasks.filter(t=>t.status==='completed').length;$('totalCount').textContent=tasks.length;if(!arr.length){$('list').innerHTML='<div class="empty">Tasks ఏవీ లేవు.</div>';return}$('list').innerHTML=arr.map(t=>{const d=t.status==='completed';return'<div class="task '+(d?'done':'')+'"><div class="tasktop"><strong>'+esc(t.customer_name)+'</strong><span class="badge">'+(d?'Completed':'Pending')+'</span></div><div class="meta">📞 '+esc(t.phone||'-')+' &nbsp; 📅 '+formatDate(t.reminder_date)+(t.reminder_time?' ⏰ '+esc(t.reminder_time):'')+'</div><div><b>Task:</b> '+esc(t.task)+'</div>'+(t.notes?'<div class="meta">📝 '+esc(t.notes)+'</div>':'')+'<div class="actions"><button class="primary" onclick="toggle('+t.id+')">'+(d?'↩️ Pending':'✅ Complete')+'</button><button class="secondary" onclick="edit('+t.id+')">✏️ Edit</button><button class="danger" onclick="del('+t.id+')">🗑️ Delete</button></div></div>'}).join('')}
+boot();
+</script>
+</body>
+</html>
